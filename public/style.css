@@ -154,7 +154,7 @@ select[data-a=timer]{margin:4px 0 8px}
 #app.shake{animation:shake .6s}
 @keyframes shake{10%,90%{transform:translate(-2px,1px)}20%,80%{transform:translate(4px,-2px)}30%,50%,70%{transform:translate(-8px,3px)}40%,60%{transform:translate(8px,-3px)}}
 .reveal{position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;cursor:pointer;
-  background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--rc) 35%,transparent),rgba(3,2,10,.94) 70%);animation:rvIn .25s ease both,rvOut .4s 2.9s ease both}
+  background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--rc) 26%,#05030d),#05030d 75%);animation:rvIn .25s ease both,rvOut .4s 2.9s ease both}
 .reveal.kill{--rc:#ff3860}.reveal.out{--rc:#ffd34d}.reveal.save{--rc:#39ff88}.reveal.tie{--rc:#00e5ff}
 .reveal::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;background:var(--rc);box-shadow:0 0 30px 6px var(--rc);animation:sweep .7s ease both}
 @keyframes sweep{from{transform:scaleX(0)}to{transform:scaleX(1)}}
