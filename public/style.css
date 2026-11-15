@@ -166,3 +166,104 @@ select[data-a=timer]{margin:4px 0 8px}
 .rv-title{font-family:var(--head);font-weight:900;letter-spacing:5px;text-transform:uppercase;color:var(--rc);text-shadow:0 0 18px var(--rc);font-size:22px;margin-top:6px;animation:rise .4s .25s ease both}
 .rv-name{font-family:var(--head);font-weight:900;font-size:34px;margin:10px 0;color:#fff;animation:rise .4s .4s ease both}
 .rv-sub{color:var(--mute);margin-top:10px;font-size:17px;animation:rise .4s .6s ease both}
+
+/* ---- stickman table ---- */
+.tablecard{padding:10px}
+.tbl-head{margin-bottom:2px}
+#tsvg{width:100%;height:auto;display:block;touch-action:manipulation}
+#tsvg.dim{filter:brightness(.55) saturate(.8)}
+.tbl{stroke:var(--glow);stroke-width:3;filter:drop-shadow(0 0 10px var(--glow))}
+.tblin{stroke:rgba(255,255,255,.12);stroke-width:1.5;stroke-dasharray:4 6}
+.tcenter{fill:var(--glow);font-family:var(--head);font-weight:900;font-size:15px;letter-spacing:2px;filter:drop-shadow(0 0 6px var(--glow))}
+.seat{cursor:pointer;color:hsl(var(--h),95%,66%)}
+.seat .ln{stroke:currentColor;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;fill:none;filter:drop-shadow(0 0 3px currentColor)}
+.seat .ln.sm{stroke-width:1.8}
+.seat .head{fill:#0b0820;stroke:currentColor;stroke-width:3.4;filter:drop-shadow(0 0 4px currentColor)}
+.seat .eye{fill:currentColor}
+.seat .shadow{fill:rgba(0,0,0,.35)}
+.seat .mering{fill:none;stroke:var(--gold);stroke-width:2;filter:drop-shadow(0 0 5px var(--gold))}
+.seat:hover .head{fill:#1c1450}
+.seat.dead{opacity:.38;filter:grayscale(.9)}
+.seat.off{opacity:.6}
+.seat .vbub circle{fill:var(--red);stroke:#fff;stroke-width:1.5}
+.seat .vbub text{fill:#fff;font-weight:800;font-size:11px;font-family:var(--head)}
+.seat.accused .head{fill:#4a0c24;animation:pulse 0.5s 4}
+.seat.wobble .headg{animation:wobble .6s ease;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes wobble{0%{transform:rotate(0)}15%{transform:rotate(-26deg) scale(1.08)}35%{transform:rotate(22deg)}55%{transform:rotate(-14deg)}75%{transform:rotate(8deg)}100%{transform:rotate(0)}}
+.seat .walker{transform-box:fill-box}
+.fxclone .wpn{font-size:26px;transform-origin:0 0;transform-box:fill-box}
+.fxclone .walker.swing .wpn{animation:swing .35s ease-in-out 2}
+@keyframes swing{0%{transform:rotate(-70deg)}50%{transform:rotate(55deg) translate(6px,4px)}100%{transform:rotate(-70deg)}}
+.fxclone{pointer-events:none}
+.tl{fill:var(--ink);font-family:var(--body);font-weight:700;paint-order:stroke;stroke:#05030d;stroke-width:3px;pointer-events:none}
+.tl.me{fill:var(--gold)}.tl.dead{fill:var(--mute)}
+.bonk{fill:#ffe34d;font-family:var(--head);font-weight:900;font-size:20px;text-anchor:middle;stroke:#c2185b;stroke-width:1.2px;paint-order:stroke;animation:bonk 1.1s ease-out both;pointer-events:none}
+@keyframes bonk{0%{transform:translateY(8px) scale(.3);opacity:0}25%{transform:translateY(-6px) scale(1.3);opacity:1}100%{transform:translateY(-34px) scale(1);opacity:0}}
+.stars{font-size:22px;text-anchor:middle;animation:bonk 1.1s ease-out both;pointer-events:none}
+.beam{stroke:var(--red);stroke-width:3;stroke-dasharray:7 7;stroke-linecap:round;filter:drop-shadow(0 0 6px var(--red));animation:dash .5s linear infinite,fadeout 2.6s ease-out both}
+@keyframes dash{to{stroke-dashoffset:-14}}
+@keyframes fadeout{0%,70%{opacity:1}100%{opacity:0}}
+.pfinger{font-size:24px;text-anchor:middle;animation:fadeout 2.6s ease-out both}
+.sus{fill:#fff;font-family:var(--head);font-weight:900;font-size:17px;text-anchor:middle;stroke:var(--red);stroke-width:5px;paint-order:stroke;animation:bonk 2.4s ease-out both}
+.tbl-tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:2px 0 4px}
+.tbl-tools .chip{padding:6px 10px}
+.tbl-tools .chip.on{background:linear-gradient(90deg,var(--blue),var(--violet));color:#001018;border-color:transparent;box-shadow:0 0 12px rgba(0,229,255,.5)}
+.tbl-tools .chip.wp{font-size:18px;padding:3px 8px}
+
+/* ---- getting beaten up: body goes redder with every bonk ---- */
+.seat{color:color-mix(in srgb,hsl(var(--h),95%,66%),#ff1a1a calc(var(--hurt,0)*100%))}
+.seat.hurt .head{fill:color-mix(in srgb,#0b0820,#7a0010 calc(var(--hurt,0)*100%))}
+.seat.hurt.l4{animation:shiver .16s linear infinite;transform-box:fill-box}
+@keyframes shiver{0%,100%{translate:0 0}25%{translate:-1px 0}75%{translate:1px 0}}
+.seat .bump{fill:#ff6a3d;stroke:#fff3;stroke-width:1}
+.seat .sweat{fill:#7fd8ff;stroke:none;animation:drip 1.2s ease-in infinite}
+@keyframes drip{0%{transform:translateY(0);opacity:1}100%{transform:translateY(8px);opacity:0}}
+.seat .orbit{animation:orb 1.1s linear infinite;transform-origin:0 -44px;transform-box:view-box}
+@keyframes orb{to{transform:rotate(360deg)}}
+.seat .band{stroke:#fff;stroke-width:4;stroke-linecap:round;fill:none;opacity:.9}
+.seat .tear{stroke:#7fd8ff;stroke-width:1.6;fill:none;stroke-linecap:round}
+.seat .steam{animation:puff .7s ease-in-out infinite alternate}
+@keyframes puff{to{transform:translateY(-4px) scale(1.25)}}
+.seat.hurt.l4 .headg{transform:scale(1.12);transform-origin:0 -26px;transform-box:view-box}
+
+/* ---- emotes, silly weapons, hats ---- */
+.toolrow{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;width:100%;align-items:center}
+.tbl-tools .chip.em{font-size:18px;padding:3px 8px}
+.tbl-tools .chip.ht{font-size:16px;padding:3px 7px}
+.toolrow.hats .sub{margin:0 4px 0 0;font-size:12px}
+.hat{filter:drop-shadow(0 0 3px rgba(255,255,255,.4))}
+.hat.halo{animation:pulse 1.4s ease-in-out infinite}
+.emo{font-size:26px;text-anchor:middle;animation:bonk 1.7s ease-out both;pointer-events:none}
+.seat.slipped .walker{animation:slipspin .9s ease-in-out;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes slipspin{0%{transform:rotate(0)}30%{transform:rotate(-70deg) translateY(-6px)}60%{transform:rotate(-190deg) translateY(4px)}100%{transform:rotate(-360deg)}}
+.seat.dazed .headg{animation:dazed 1s ease-in-out;transform-box:view-box;transform-origin:0 -26px}
+@keyframes dazed{0%{transform:scale(1,1)}10%{transform:scale(1.25,.6)}30%{transform:scale(.9,1.15) rotate(12deg)}50%{transform:rotate(-14deg)}70%{transform:rotate(9deg)}100%{transform:none}}
+.seat.emo-dance .walker{animation:dance .35s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes dance{from{transform:rotate(-12deg) translateY(0)}to{transform:rotate(12deg) translateY(-6px)}}
+.seat.emo-cry .headg{animation:cry .25s linear infinite;transform-box:view-box}
+@keyframes cry{0%,100%{transform:translateY(0)}50%{transform:translateY(2px)}}
+.seat.emo-laugh .walker{animation:laugh .18s linear infinite;transform-box:fill-box}
+@keyframes laugh{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.seat.emo-flex .walker{animation:flex .5s ease-in-out 3;transform-box:fill-box;transform-origin:50% 100%}
+@keyframes flex{50%{transform:scale(1.18)}}
+.seat.emo-facepalm .headg{animation:cry .6s ease 2;transform-box:view-box}
+.seat.emo-dizzy .headg{animation:dazed 1s ease-in-out 2;transform-box:view-box;transform-origin:0 -26px}
+.bonk,.stars,.emo,.sus,.pfinger{transform-box:fill-box;transform-origin:center}
+
+/* ---- call mode: subtitles + flash cues ---- */
+.chip.on{box-shadow:0 0 12px var(--green);border-color:var(--green);color:var(--green)}
+.subtitle{position:fixed;left:10px;right:10px;bottom:14px;z-index:300;background:rgba(5,3,13,.94);border:2px solid var(--gold);border-radius:16px;padding:14px 16px;color:#fff;font-size:20px;line-height:1.35;font-weight:700;text-align:center;box-shadow:0 0 24px rgba(255,211,77,.45);max-width:520px;margin:0 auto;animation:subin .3s ease-out}
+@keyframes subin{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
+body.cueflash::before{content:"";position:fixed;inset:0;z-index:250;pointer-events:none;box-shadow:inset 0 0 0 8px var(--gold),inset 0 0 70px rgba(255,211,77,.55);animation:cuef .26s ease-out}
+@keyframes cuef{from{opacity:1}to{opacity:0}}
+
+/* ---- live voice chat ---- */
+.voicebar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin:6px 0}
+.voicebar .sub{width:100%;text-align:center;font-size:13px;margin:0}
+.voicebar .chip.vj{background:linear-gradient(90deg,var(--green),var(--blue));color:#02110a;border-color:transparent;font-weight:800;box-shadow:0 0 14px rgba(57,255,136,.45)}
+.voiceaudio{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.seat.talking .head{fill:#0f3a2a;filter:drop-shadow(0 0 9px var(--green))}
+.seat.talking .ln{filter:drop-shadow(0 0 7px var(--green))}
+.seat.talking .headg{animation:talk .28s ease-in-out infinite alternate;transform-box:view-box;transform-origin:0 -26px}
+@keyframes talk{to{transform:scale(1.08)}}
+.seat.talking::after{content:""}

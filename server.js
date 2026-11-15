@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
-const { Game } = require('./game');
+const { Game, HATS } = require('./game');
 const { THROWS, ROASTS } = require('./lines');
 const { narrate } = require('./narrator');
 
@@ -21,6 +21,8 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY'
 };
 
+const WEAPONS = ['slipper', 'hammer', 'pillow', 'fist', 'fish', 'pan', 'banana', 'chicken'];
+const EMOTES = ['dance', 'cry', 'laugh', 'facepalm', 'flex', 'dizzy'];
 const uid = () => crypto.randomBytes(6).toString('hex');
 const secret = () => crypto.randomBytes(18).toString('hex');
 
@@ -39,12 +41,15 @@ class Room {
     this.cool = new Map();      // `${pid}:${kind}` -> last ts
     this.closed = false;
     this.deadline = null;
+    this.voice = new Set();     // pids currently in live voice chat
   }
 
   touch() { this.touched = Date.now(); }
   send(ws, msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
   sendTo(pid, msg) { this.send(this.conns.get(pid), msg); }
   broadcast(msg, filter) { for (const [pid, ws] of this.conns) if (!filter || filter(this.game.get(pid))) this.send(ws, msg); }
+  sendVoice(ws) { this.send(ws, { t: 'voice', ids: [...this.voice] }); }
+  broadcastVoice() { this.broadcast({ t: 'voice', ids: [...this.voice] }); }
   pushState() {
     const left = this.deadline ? Math.max(0, this.deadline - Date.now()) : null;
     for (const [pid, ws] of this.conns) this.send(ws, { t: 'state', s: this.game.viewFor(pid), left });
@@ -158,6 +163,24 @@ class Room {
       case 'chat': this.chat(ws, msg); break;
       case 'fx': this.fx(ws, msg); break;
       case 'roast': this.roast(ws, msg); break;
+      case 'voice': {            // join / leave live voice chat (audio itself flows peer-to-peer over WebRTC)
+        const on = !!msg.on;
+        if (on === this.voice.has(pid)) { this.sendVoice(ws); break; }
+        if (on) this.voice.add(pid); else this.voice.delete(pid);
+        this.broadcastVoice();
+        break;
+      }
+      case 'rtc': {              // WebRTC signalling relay: only between two people who are both in voice
+        const to = String(msg.to || '');
+        if (!this.voice.has(pid) || !this.voice.has(to) || to === pid || !msg.data || typeof msg.data !== 'object') break;
+        if (JSON.stringify(msg.data).length > 12000) break;
+        this.sendTo(to, { t: 'rtc', from: pid, data: msg.data });
+        break;
+      }
+      case 'hit': this.hit(ws, msg); break;
+      case 'emote': this.emote(ws, msg); break;
+      case 'hat': if (res(g.setHat(pid, String(msg.hat)))) this.sync(); break;
+      case 'point': this.point(ws, msg); break;
       case 'ping': this.send(ws, { t: 'pong' }); break;
       default: err('Unknown action');
     }
@@ -208,6 +231,36 @@ class Room {
     this.broadcast({ t: 'fx', from: pid, n: me.name, to: to.id, tn: to.name, emoji: msg.emoji });
   }
 
+  // Table fun: walk over and bonk someone, or point at a suspect. Never changes the game result.
+  tableTarget(ws, msg) {
+    const g = this.game, pid = ws.pid, me = g.get(pid), to = g.get(String(msg.to));
+    if (!me || !to || to.id === pid) return null;
+    if (g.phase === 'night') { this.send(ws, { t: 'err', msg: 'Night: everyone is asleep 😴' }); return null; }
+    return { g, pid, me, to };
+  }
+
+  hit(ws, msg) {
+    const w = String(msg.weapon);
+    if (!WEAPONS.includes(w)) return;
+    const x = this.tableTarget(ws, msg); if (!x) return;
+    if (!this.allowed(x.pid, 'hit', 900)) return;
+    x.g.stat('bashes', x.pid); x.g.stat('hits', x.to.id);
+    this.broadcast({ t: 'hit', from: x.pid, n: x.me.name, to: x.to.id, tn: x.to.name, weapon: w });
+  }
+
+  emote(ws, msg) {
+    const g = this.game, me = g.get(ws.pid), e = String(msg.emote);
+    if (!me || !EMOTES.includes(e)) return;
+    if (!this.allowed(ws.pid, 'emote', 1100)) return;
+    this.broadcast({ t: 'emote', from: ws.pid, n: me.name, emote: e });
+  }
+
+  point(ws, msg) {
+    const x = this.tableTarget(ws, msg); if (!x) return;
+    if (!this.allowed(x.pid, 'point', 1200)) return;
+    this.broadcast({ t: 'point', from: x.pid, n: x.me.name, to: x.to.id, tn: x.to.name });
+  }
+
   roast(ws, msg) {
     const g = this.game, pid = ws.pid, me = g.get(pid), to = g.get(String(msg.to));
     const i = Number(msg.i);
@@ -232,6 +285,7 @@ class Room {
     const pid = ws.pid;
     if (!pid || this.conns.get(pid) !== ws) return;
     this.conns.delete(pid);
+    if (this.voice.delete(pid)) this.broadcastVoice();
     const g = this.game;
     g.setConnected(pid, false);
     if (g.phase === 'lobby') {
@@ -257,6 +311,24 @@ class Room {
   }
 }
 
+// STUN is enough for most home Wi-Fi; strict mobile networks also need a TURN relay (set TURN_URL / TURN_USER / TURN_PASS).
+function iceServers(options) {
+  const list = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  const url = options.turnUrl || process.env.TURN_URL;
+  if (url) list.push({ urls: url.split(',').map(s => s.trim()).filter(Boolean), username: options.turnUser || process.env.TURN_USER || '', credential: options.turnPass || process.env.TURN_PASS || '' });
+  return list;
+}
+
+// Managed relay (Metered "Open Relay", free 20 GB/month): set METERED_APP (the name before .metered.live) and METERED_API_KEY.
+// The server fetches fresh TURN credentials itself and hands them to players, so the key never reaches a browser.
+async function fetchMeteredIce(app, key, fetchImpl) {
+  const r = await fetchImpl(`https://${encodeURIComponent(app)}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
+  if (!r.ok) throw new Error('TURN credentials HTTP ' + r.status);
+  const list = await r.json();
+  if (!Array.isArray(list)) throw new Error('unexpected TURN response');
+  return list.filter(x => x && x.urls && typeof x === 'object');
+}
+
 function createServer(options = {}) {
   const srv = {
     rooms: new Map(),
@@ -265,8 +337,25 @@ function createServer(options = {}) {
     rng: options.rng || Math.random,
     log: options.log || (() => {}),
     maxRooms: options.maxRooms || 300,
+    ice: iceServers(options),
+    baseIce: null,
     destroyRoom(code) { const r = srv.rooms.get(code); if (r) { r.close(); srv.rooms.delete(code); } }
   };
+
+  srv.baseIce = srv.ice;
+  const metApp = options.meteredApp || process.env.METERED_APP, metKey = options.meteredKey || process.env.METERED_API_KEY;
+  const doFetch = options.fetchImpl || (typeof fetch === 'function' ? fetch : null);
+  let iceTimer = null;
+  async function refreshIce() {
+    try {
+      const turn = await fetchMeteredIce(metApp, metKey, doFetch);
+      if (turn.length) { srv.ice = [...srv.baseIce, ...turn]; srv.log('TURN relay credentials loaded (' + turn.length + ' servers)'); }
+    } catch (e) { srv.log('TURN refresh failed: ' + (e && e.message)); }
+  }
+  if (metApp && metKey && doFetch) {
+    refreshIce();
+    iceTimer = setInterval(refreshIce, 6 * 3600 * 1000); if (iceTimer.unref) iceTimer.unref();
+  }
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
@@ -282,18 +371,19 @@ function createServer(options = {}) {
     });
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16384 });
 
   wss.on('connection', ws => {
     ws.pid = null; ws.room = null; ws.alive = true;
-    let count = 0;
-    const rl = setInterval(() => { count = 0; }, 10000);
+    let count = 0, rtcCount = 0;
+    const rl = setInterval(() => { count = 0; rtcCount = 0; }, 10000);
     ws.on('pong', () => { ws.alive = true; });
     ws.on('message', raw => {
-      if (++count > 120) { try { ws.close(1008, 'rate limit'); } catch (e) { /* ignore */ } return; }
       let msg;
       try { msg = JSON.parse(raw.toString()); } catch (e) { return; }
       if (!msg || typeof msg !== 'object') return;
+      // voice signalling (ICE candidates arrive in bursts) has its own, roomier budget
+      if (msg.t === 'rtc' ? ++rtcCount > 600 : ++count > 120) { try { ws.close(1008, 'rate limit'); } catch (e) { /* ignore */ } return; }
       try {
         if (!ws.room) return handleEntry(ws, msg);
         if (!ws.pid) return;
@@ -308,8 +398,9 @@ function createServer(options = {}) {
     const err = m => ws.send(JSON.stringify({ t: 'err', msg: m }));
     const joined = (room, pid, token) => {
       room.attach(ws, pid);
-      ws.send(JSON.stringify({ t: 'joined', code: room.code, token, id: pid, throws: THROWS, roasts: ROASTS }));
+      ws.send(JSON.stringify({ t: 'joined', code: room.code, token, id: pid, throws: THROWS, roasts: ROASTS, ice: srv.ice }));
       room.sync();
+      room.sendVoice(ws);
     };
     if (msg.t === 'create') {
       if (srv.rooms.size >= srv.maxRooms) return err('Server is busy, try again later');
@@ -350,7 +441,7 @@ function createServer(options = {}) {
   return {
     srv, server, wss,
     listen(port = options.port || 0) { return new Promise(res => server.listen(port, () => res(server.address().port))); },
-    close() { clearInterval(hb); for (const c of [...srv.rooms.keys()]) srv.destroyRoom(c); wss.clients.forEach(c => c.terminate()); return new Promise(res => wss.close(() => server.close(() => res()))); }
+    close() { clearInterval(hb); if (iceTimer) clearInterval(iceTimer); for (const c of [...srv.rooms.keys()]) srv.destroyRoom(c); wss.clients.forEach(c => c.terminate()); return new Promise(res => wss.close(() => server.close(() => res()))); }
   };
 }
 

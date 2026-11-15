@@ -362,7 +362,7 @@ test('chat rate limit and oversized frames', async () => {
   assert.match(a.errs().join(), /Slow down/);
   const big = new Bot(env.url, 'big'); await big.open();
   const closed = new Promise(r => big.ws.on('close', c => r(c)));
-  big.ws.send('x'.repeat(10000));
+  big.ws.send('x'.repeat(20000));
   assert.equal(await closed, 1009);
   closeAll(bots); await env.app.close();
 });

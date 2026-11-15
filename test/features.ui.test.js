@@ -177,3 +177,23 @@ test('overlay dismisses on tap and does not replay on later state pushes', async
   assert.equal(r.host.$$('.reveal').length, 0, 'does not replay on later state pushes');
   r.clients.forEach(c => assert.deepEqual(c.errors, []));
 });
+
+test('call mode: 📞 chip persists, shows narrator subtitles and survives a state push (for players who cannot hear on a WhatsApp call)', async () => {
+  const r = await startWith(5, { ai: false }).catch(async () => null);
+  assert.ok(r);
+  const c = r.host;
+  assert.ok(c.$('#callchip'), 'chip present');
+  assert.equal(c.$('#callchip').classList.contains('on'), false);
+  c.click(c.$('#callchip'));
+  assert.ok(c.$('#callchip').classList.contains('on'));
+  assert.match(c.text(), /Call mode ON/);
+  assert.equal(c.w.localStorage.getItem('mafia_call'), '1');
+  await toDay(r);                                                         // a new announcement arrives -> subtitle
+  const sub = await until(() => c.$('#subtitle'), 3000, 'subtitle shown');
+  assert.match(sub.textContent, /🎙️/); assert.ok(sub.textContent.length > 8);
+  c.click(sub); assert.equal(c.$('#subtitle'), null, 'tap dismisses');
+  c.click(c.$('#callchip'));
+  assert.equal(c.w.localStorage.getItem('mafia_call'), '0');
+  assert.equal(r.clients[1].$('#subtitle'), null, 'other players unaffected');
+  r.clients.forEach(x => assert.deepEqual(x.errors, []));
+});

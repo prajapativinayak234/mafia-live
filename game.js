@@ -43,7 +43,7 @@ class Game {
     this.awards = [];
     this.dare = '';
     this.narrator = null;
-    this.stats = { thrown: {}, roasts: {}, chat: {} };
+    this.stats = { thrown: {}, roasts: {}, chat: {}, hits: {}, bashes: {} };
     this.sniperUsed = {};
     this.jesterWon = false;
     this._scored = false;
@@ -70,7 +70,7 @@ class Game {
     const n = cleanName(name);
     if (!n) return { ok: false, err: 'Enter a name' };
     if (this.players.some(p => p.name.toLowerCase() === n.toLowerCase())) return { ok: false, err: 'That name is taken' };
-    this.players.push({ id, name: n, role: null, alive: true, connected: true });
+    this.players.push({ id, name: n, role: null, alive: true, connected: true, hat: '' });
     if (!this.hostId) this.hostId = id;
     return { ok: true };
   }
@@ -325,6 +325,8 @@ class Game {
     if ((x = top(this.stats.thrown))) aw.push(`Most Pelted: ${nm(x[0])} (${x[1]} hits)`);
     if ((x = top(this.stats.roasts))) aw.push(`Roast Master: ${nm(x[0])} (${x[1]} roasts)`);
     if ((x = top(this.stats.chat))) aw.push(`Biggest Talker: ${nm(x[0])} (${x[1]} messages)`);
+    if ((x = top(this.stats.hits))) aw.push(`Most Beaten: ${nm(x[0])} (${x[1]} bonks)`);
+    if ((x = top(this.stats.bashes))) aw.push(`Biggest Basher: ${nm(x[0])} (${x[1]} hits)`);
     this.awards = aw;
     this.last = { ...(this.last || {}), kind: 'over', winner: this.winner };
     return true;
@@ -353,6 +355,14 @@ class Game {
     this.stats[kind][id] = (this.stats[kind][id] || 0) + n;
   }
 
+  setHat(pid, hat) {
+    const p = this.get(pid);
+    if (!p) return { err: 'No such player' };
+    if (!HATS.includes(hat)) return { err: 'Unknown hat' };
+    p.hat = hat === 'none' ? '' : hat;
+    return { ok: true };
+  }
+
   /* ---------- per-player view (the ONLY thing sent to clients) ---------- */
   viewFor(pid) {
     const me = this.get(pid);
@@ -367,7 +377,7 @@ class Game {
       announce: this.announce,
       aid: this.aid,
       narrator: this.narrator,
-      players: this.players.map(p => ({ id: p.id, name: p.name, alive: p.alive, connected: p.connected, role: revealRole(p) })),
+      players: this.players.map(p => ({ id: p.id, name: p.name, alive: p.alive, connected: p.connected, hat: p.hat || '', role: revealRole(p) })),
       votes: (this.phase === 'day' || this.phase === 'verdict' || over) ? this.votes : {},
       winner: this.winner,
       awards: over ? this.awards : [],
@@ -403,4 +413,5 @@ class Game {
   }
 }
 
-module.exports = { Game, ROLE_NAME, STYLES, SPECIAL, TIMERS, MAX_PLAYERS, MIN_PLAYERS, cleanName };
+const HATS = ['none', 'crown', 'shades', 'chef', 'party', 'cowboy', 'halo', 'horns', 'tophat'];
+module.exports = { HATS, Game, ROLE_NAME, STYLES, SPECIAL, TIMERS, MAX_PLAYERS, MIN_PLAYERS, cleanName };
