@@ -121,14 +121,14 @@ test('real client: refresh restores the seat (session token) mid-game', async ()
   host.click(host.$('[data-a=start]'));
   await until(() => /Night 1/.test(others[0].text()));
   const roleBefore = others[0].$('#rolechip').textContent;
-  const saved = others[0].w.localStorage.getItem('mafia_session');
+  const saved = others[0].w.sessionStorage.getItem('mafia_session');
   assert.ok(saved);
   others[0].w.close();
-  // "refresh": a new page that shares the same localStorage session
+  // "refresh": a new page that shares the same tab session (sessionStorage)
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8').replace(/<script src="\/app.js"><\/script>/, '');
   const dom = new JSDOM(html, { url: `http://127.0.0.1:${port}/`, runScripts: 'outside-only', pretendToBeVisual: true });
   dom.window.WebSocket = WebSocket;
-  dom.window.localStorage.setItem('mafia_session', saved);
+  dom.window.sessionStorage.setItem('mafia_session', saved);
   dom.window.eval(fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8'));
   await until(() => /Night 1/.test(dom.window.document.body.textContent), 4000, 'restored');
   assert.equal(dom.window.document.querySelector('#rolechip').textContent, roleBefore);

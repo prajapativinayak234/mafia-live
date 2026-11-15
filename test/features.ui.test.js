@@ -187,13 +187,13 @@ test('call mode: 📞 chip persists, shows narrator subtitles and survives a sta
   c.click(c.$('#callchip'));
   assert.ok(c.$('#callchip').classList.contains('on'));
   assert.match(c.text(), /Call mode ON/);
-  assert.equal(c.w.localStorage.getItem('mafia_call'), '1');
+  assert.equal(c.w.sessionStorage.getItem('mafia_call'), '1');
   await toDay(r);                                                         // a new announcement arrives -> subtitle
   const sub = await until(() => c.$('#subtitle'), 3000, 'subtitle shown');
   assert.match(sub.textContent, /🎙️/); assert.ok(sub.textContent.length > 8);
   c.click(sub); assert.equal(c.$('#subtitle'), null, 'tap dismisses');
   c.click(c.$('#callchip'));
-  assert.equal(c.w.localStorage.getItem('mafia_call'), '0');
+  assert.equal(c.w.sessionStorage.getItem('mafia_call'), '0');
   assert.equal(r.clients[1].$('#subtitle'), null, 'other players unaffected');
   r.clients.forEach(x => assert.deepEqual(x.errors, []));
 });

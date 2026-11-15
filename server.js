@@ -11,11 +11,15 @@ const { narrate } = require('./narrator');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const DEFAULT_TIMING = { resolveMin: 2500, resolveMax: 5000, dayResolve: 1200, verdict: 7000, nightMax: 120000, dayMax: 600000, lobbyGrace: 20000, emptyTTL: 1800000, idleTTL: 10800000, timerScale: 1 };
+const DEFAULT_TIMING = { resolveMin: 2500, resolveMax: 5000, dayResolve: 1200, verdict: 7000, nightMax: 120000, dayMax: 600000, lobbyGrace: 20000, emptyTTL: 600000, idleTTL: 10800000, timerScale: 1 };
 const TIMER_PRESETS = { fast: { night: 45000, day: 90000 }, normal: { night: 75000, day: 180000 }, relaxed: { night: 120000, day: 300000 } };
 
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws: wss:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws: wss:; img-src 'self' data:; base-uri 'none'; object-src 'none'; form-action 'none'; media-src 'self' blob: mediastream:; worker-src 'none'; frame-ancestors 'none'",
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Permissions-Policy': 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), bluetooth=(), serial=(), accelerometer=(), gyroscope=(), magnetometer=(), interest-cohort=()',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY'
@@ -339,6 +343,8 @@ function createServer(options = {}) {
     maxRooms: options.maxRooms || 300,
     ice: iceServers(options),
     baseIce: null,
+    misses: [],
+    relayOnly: (options.relayOnly !== undefined ? options.relayOnly : process.env.VOICE_RELAY_ONLY === '1'),
     destroyRoom(code) { const r = srv.rooms.get(code); if (r) { r.close(); srv.rooms.delete(code); } }
   };
 
@@ -358,20 +364,30 @@ function createServer(options = {}) {
   }
 
   const server = http.createServer((req, res) => {
-    const url = new URL(req.url, 'http://x');
-    if (url.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
-    let p = decodeURIComponent(url.pathname);
+    let url, p;
+    try { url = new URL(req.url, 'http://x'); p = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end('Bad request'); }
+    if (url.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end('ok'); }
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain', ...SECURITY_HEADERS }); return res.end('Method not allowed'); }
+    if (p.includes('\0')) { res.writeHead(400, { 'content-type': 'text/plain', ...SECURITY_HEADERS }); return res.end('Bad request'); }
     if (p === '/') p = '/index.html';
     const file = path.normalize(path.join(PUBLIC_DIR, p));
-    if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403); return res.end('Forbidden'); }
+    if (!file.startsWith(PUBLIC_DIR + path.sep)) { res.writeHead(403, { 'content-type': 'text/plain', ...SECURITY_HEADERS }); return res.end('Forbidden'); }
     fs.readFile(file, (e, data) => {
-      if (e) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('Not found'); }
-      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-cache', ...SECURITY_HEADERS });
+      if (e) { res.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end('Not found'); }
+      res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store', ...SECURITY_HEADERS });
       res.end(data);
     });
   });
 
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16384 });
+  // Only pages served by THIS site may open a game socket (blocks other websites from hijacking a visitor's browser).
+  // Non-browser clients send no Origin header and are still allowed; extra origins can be listed in ALLOWED_ORIGINS.
+  const extraOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const verifyClient = ({ origin, req }) => {
+    if (!origin) return true;
+    try { if (new URL(origin).host === req.headers.host) return true; } catch (e) { return false; }
+    return extraOrigins.includes(origin);
+  };
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16384, verifyClient });
 
   wss.on('connection', ws => {
     ws.pid = null; ws.room = null; ws.alive = true;
@@ -398,13 +414,13 @@ function createServer(options = {}) {
     const err = m => ws.send(JSON.stringify({ t: 'err', msg: m }));
     const joined = (room, pid, token) => {
       room.attach(ws, pid);
-      ws.send(JSON.stringify({ t: 'joined', code: room.code, token, id: pid, throws: THROWS, roasts: ROASTS, ice: srv.ice }));
+      ws.send(JSON.stringify({ t: 'joined', code: room.code, token, id: pid, throws: THROWS, roasts: ROASTS, ice: srv.ice, relayOnly: srv.relayOnly }));
       room.sync();
       room.sendVoice(ws);
     };
     if (msg.t === 'create') {
       if (srv.rooms.size >= srv.maxRooms) return err('Server is busy, try again later');
-      let code; do { code = Array.from({ length: 4 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join(''); } while (srv.rooms.has(code));
+      let code; do { code = Array.from({ length: 4 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join(''); } while (srv.rooms.has(code));
       const room = new Room(code, srv);
       const pid = uid(), token = secret();
       const r = room.game.addPlayer(pid, msg.name);
@@ -415,6 +431,12 @@ function createServer(options = {}) {
     }
     const code = String(msg.code || '').toUpperCase().trim();
     const room = srv.rooms.get(code);
+    if (!room) {                                   // wrong-code guessing is slowed down (per connection and server-wide)
+      const now = Date.now();
+      srv.misses = srv.misses.filter(t => now - t < 60000); srv.misses.push(now);
+      ws.misses = (ws.misses || 0) + 1;
+      if (ws.misses > 8 || srv.misses.length > 150) { err('Too many wrong codes. Wait a minute and try again.'); if (ws.misses > 8) { try { ws.close(1008, 'too many tries'); } catch (e) { /* ignore */ } } return; }
+    }
     if (msg.t === 'join') {
       if (!room) return err('Room not found. Check the code.');
       const pid = uid(), token = secret();

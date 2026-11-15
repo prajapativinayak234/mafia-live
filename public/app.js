@@ -18,7 +18,10 @@ function av(n) { var h = 0, i; for (i = 0; i < n.length; i++) h = (h * 31 + n.ch
 
 /* ---------- sound effects (WebAudio, no files) ---------- */
 var sfxOn = true, actx = null, callMode = false;
-try { callMode = localStorage.getItem('mafia_call') === '1'; } catch (e) { /* ignore */ }
+/* Privacy: nothing is kept after the tab is closed. Settings live in sessionStorage only, and anything an older version left in localStorage is wiped. */
+try { ['mafia_session', 'mafia_name', 'mafia_hat', 'mafia_call', 'mafia_sfx'].forEach(function (k) { localStorage.removeItem(k); }); } catch (e) { /* ignore */ }
+var store = (function () { try { return window.sessionStorage; } catch (e) { return null; } })();
+try { callMode = store && store.getItem('mafia_call') === '1'; } catch (e) { /* ignore */ }
 /* A phone/WhatsApp call takes over the audio session: the browser's audio gets suspended/interrupted and never comes back by itself. Re-wake it on every touch and when the page returns to view. */
 function wakeAudio() {
   try {
@@ -43,7 +46,7 @@ function showSub(t) {
   d.addEventListener('click', function () { d.remove(); });
   document.body.appendChild(d); setTimeout(function () { if (d.parentNode) d.remove(); }, Math.min(14000, 4000 + t.length * 55));
 }
-try { if (localStorage.getItem('mafia_sfx') === '0') sfxOn = false; } catch (e) { /* ignore */ }
+try { if (store && store.getItem('mafia_sfx') === '0') sfxOn = false; } catch (e) { /* ignore */ }
 function tone(f, at, d, type, vol, to) {
   var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + at;
   o.type = type || 'sine'; o.frequency.setValueAtTime(f, t);
@@ -100,16 +103,16 @@ var WSFX = { slipper: 'slap', hammer: 'bonk', pillow: 'poof', fist: 'punch', fis
 var WTXT = { slipper: ['CHAPPAL!', 'THWAP!'], hammer: ['BONK!', 'WHACK!'], pillow: ['POOF!', 'FLUFF!'], fist: ['POW!', 'BAM!'], fish: ['SPLAT!', 'SMELLY!'], pan: ['CLANG!', 'DOINK!'], banana: ['WHOA!', 'SLIPPP!'], chicken: ['BAWK!', 'SQUEEE!'] };
 var EMOTES = { dance: '💃', cry: '😭', laugh: '😂', facepalm: '🤦', flex: '💪', dizzy: '😵‍💫' };
 var HATS = { none: '🚫', crown: '👑', shades: '😎', chef: '👨‍🍳', party: '🥳', cowboy: '🤠', halo: '😇', horns: '😈', tophat: '🎩' };
-function myHat() { try { return localStorage.getItem('mafia_hat') || 'none'; } catch (e) { return 'none'; } }
+function myHat() { try { return (store && store.getItem('mafia_hat')) || 'none'; } catch (e) { return 'none'; } }
 var tableMode = 'hit', weapon = 'slipper', tableOn = true, hitsTaken = {}, seatPos = {};
 var armedShot = '', endAt = null, lastEid = null, eventPrimed = false, lastTick = -1;
 var revealPending = true, lastPhase = null, lastAlive = -1, lastPlayers = -1;
 var fxCount = {}, retry = 0, pendingEntry = null, inGame = false, homeMsg = '', closing = false;
 
-function load() { try { return JSON.parse(localStorage.getItem('mafia_session') || 'null'); } catch (e) { return null; } }
-function save() { try { if (session) localStorage.setItem('mafia_session', JSON.stringify(session)); else localStorage.removeItem('mafia_session'); } catch (e) { /* ignore */ } }
-function savedName() { try { return localStorage.getItem('mafia_name') || ''; } catch (e) { return ''; } }
-function saveName(n) { try { localStorage.setItem('mafia_name', n); } catch (e) { /* ignore */ } }
+function load() { try { return JSON.parse((store && store.getItem('mafia_session')) || 'null'); } catch (e) { return null; } }
+function save() { try { if (session) store.setItem('mafia_session', JSON.stringify(session)); else store.removeItem('mafia_session'); } catch (e) { /* ignore */ } }
+function savedName() { try { return (store && store.getItem('mafia_name')) || ''; } catch (e) { return ''; } }
+function saveName(n) { try { store.setItem('mafia_name', n); } catch (e) { /* ignore */ } }
 
 /* ---------- network ---------- */
 function connect() {
@@ -135,7 +138,7 @@ function onMsg(m) {
   switch (m.t) {
     case 'joined':
       session = { code: m.code, token: m.token, id: m.id }; save(); pendingEntry = null;
-      throwsList = m.throws; roastList = m.roasts; if (m.ice) voice.ice = m.ice;
+      throwsList = m.throws; roastList = m.roasts; if (m.ice) voice.ice = m.ice; voice.relayOnly = !!m.relayOnly;
       if (voice.on) { Object.keys(voice.peers).forEach(dropPeer); send({ t: 'voice', on: true }); }
       if (myHat() !== 'none') send({ t: 'hat', hat: myHat() });
       if (!callMode) setTimeout(function () { toast('📞 On a WhatsApp call and can’t hear? Tap the 📞 chip'); }, 1500);
@@ -161,9 +164,9 @@ function leave(msg) { voice.ids = []; voiceStop(); hitsTaken = {}; seatPos = {};
 function homeView() {
   var pre = ''; try { pre = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4); } catch (e) { /* ignore */ }
   $('app').innerHTML = '<h1>🎭 Mafia Live</h1><div class="sub">Roast Edition · play from anywhere</div>' +
-    '<div class="card"><div class="eyes">Your name</div><input id="nm" type="text" maxlength="14" placeholder="e.g. Vinayak" value="' + esc(savedName()) + '">' +
+    '<div class="card"><div class="eyes">Your name</div><input id="nm" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="e.g. Vinayak" value="' + esc(savedName()) + '">' +
     '<div style="height:8px"></div>' +
-    '<div class="eyes">Room code</div><input id="cd" type="text" maxlength="4" placeholder="4 letters" style="text-transform:uppercase;text-align:center" value="' + esc(pre) + '">' +
+    '<div class="eyes">Room code</div><input id="cd" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="4 letters" style="text-transform:uppercase;text-align:center" value="' + esc(pre) + '">' +
     '<button class="primary" data-a="join">Join room</button>' +
     '<div class="center sub" style="margin:6px 0">or</div>' +
     '<button data-a="create">Create a new room</button></div>' +
@@ -567,7 +570,7 @@ function dropPeer(id) {
   try { p.pc.close(); } catch (e) { /* ignore */ } if (p.el) { p.el.srcObject = null; p.el.remove(); }
 }
 function makePeer(id, initiator) {
-  var pc = new RTCPeerConnection({ iceServers: voice.ice }), p = { pc: pc, el: null, queue: [] };
+  var pc = new RTCPeerConnection({ iceServers: voice.ice, iceTransportPolicy: voice.relayOnly ? 'relay' : 'all' }), p = { pc: pc, el: null, queue: [] };
   voice.peers[id] = p;
   if (voice.stream) voice.stream.getTracks().forEach(function (t) { pc.addTrack(t, voice.stream); });
   else if (initiator) pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -678,15 +681,15 @@ document.addEventListener('click', function (e) {
     case 'throw': if (funTarget) send({ t: 'fx', to: funTarget, emoji: v }); break;
     case 'roast': if (funTarget) send({ t: 'roast', to: funTarget, i: Number(v) }); break;
     case 'togglerole': hideRole = !hideRole; sigs.main = null; if (S) render(); break;
-    case 'togglecall': callMode = !callMode; try { localStorage.setItem('mafia_call', callMode ? '1' : '0'); } catch (x) { /* ignore */ } if (callMode) { toast('📞 Call mode ON: vibration, flashes and subtitles'); cue('bang'); } else { var sb = $('subtitle'); if (sb) sb.remove(); toast('📞 Call mode off'); } if (S) render(); break;
+    case 'togglecall': callMode = !callMode; try { store.setItem('mafia_call', callMode ? '1' : '0'); } catch (x) { /* ignore */ } if (callMode) { toast('📞 Call mode ON: vibration, flashes and subtitles'); cue('bang'); } else { var sb = $('subtitle'); if (sb) sb.remove(); toast('📞 Call mode off'); } if (S) render(); break;
     case 'togglenarr': narr = !narr; if (!narr && window.speechSynthesis) { try { speechSynthesis.cancel(); } catch (x) { /* ignore */ } } if (S) render(); break;
-    case 'togglesfx': sfxOn = !sfxOn; try { localStorage.setItem('mafia_sfx', sfxOn ? '1' : '0'); } catch (x) { /* ignore */ } if (sfxOn) sfx('tick'); if (S) render(); break;
+    case 'togglesfx': sfxOn = !sfxOn; try { store.setItem('mafia_sfx', sfxOn ? '1' : '0'); } catch (x) { /* ignore */ } if (sfxOn) sfx('tick'); if (S) render(); break;
     case 'seat': seatTap(v); break;
     case 'emote': send({ t: 'emote', emote: v }); break;
     case 'voicejoin': voiceStart(); break;
     case 'voiceleave': voiceStop(); break;
     case 'voicemute': voice.muted = !voice.muted; voiceGate(); renderVoice(); break;
-    case 'hat': try { localStorage.setItem('mafia_hat', v); } catch (e) { /* ignore */ } send({ t: 'hat', hat: v }); break;
+    case 'hat': try { store.setItem('mafia_hat', v); } catch (e) { /* ignore */ } send({ t: 'hat', hat: v }); break;
     case 'tmode': tableMode = v; sigs.tbltools = null; if (S) renderTable(); break;
     case 'weapon': weapon = v; sigs.tbltools = null; if (S) renderTable(); break;
     case 'tabletoggle': tableOn = !tableOn; if (S) renderTable(); break;
