@@ -20,6 +20,7 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), bluetooth=(), serial=(), accelerometer=(), gyroscope=(), magnetometer=(), interest-cohort=()',
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
+  'X-Robots-Tag': 'noindex, nofollow, noarchive, nosnippet',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY'
@@ -344,6 +345,7 @@ function createServer(options = {}) {
     ice: iceServers(options),
     baseIce: null,
     misses: [],
+    passHash: (() => { const p = options.passcode !== undefined ? options.passcode : process.env.GAME_PASSCODE; return p ? crypto.createHash('sha256').update(String(p).trim()).digest() : null; })(),
     relayOnly: (options.relayOnly !== undefined ? options.relayOnly : process.env.VOICE_RELAY_ONLY === '1'),
     destroyRoom(code) { const r = srv.rooms.get(code); if (r) { r.close(); srv.rooms.delete(code); } }
   };
@@ -366,6 +368,7 @@ function createServer(options = {}) {
   const server = http.createServer((req, res) => {
     let url, p;
     try { url = new URL(req.url, 'http://x'); p = decodeURIComponent(url.pathname); } catch (e) { res.writeHead(400, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end('Bad request'); }
+    if (url.pathname === '/needpass') { res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end(srv.passHash ? 'yes' : 'no'); }
     if (url.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SECURITY_HEADERS }); return res.end('ok'); }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { allow: 'GET, HEAD', 'content-type': 'text/plain', ...SECURITY_HEADERS }); return res.end('Method not allowed'); }
     if (p.includes('\0')) { res.writeHead(400, { 'content-type': 'text/plain', ...SECURITY_HEADERS }); return res.end('Bad request'); }
@@ -418,6 +421,18 @@ function createServer(options = {}) {
       room.sync();
       room.sendVoice(ws);
     };
+    // wrong guesses (room codes or the group passcode) are slowed down per connection and server-wide
+    const miss = () => {
+      const now = Date.now();
+      srv.misses = srv.misses.filter(t => now - t < 60000); srv.misses.push(now);
+      ws.misses = (ws.misses || 0) + 1;
+      if (ws.misses > 8 || srv.misses.length > 150) { err('Too many wrong tries. Wait a minute and try again.'); if (ws.misses > 8) { try { ws.close(1008, 'too many tries'); } catch (e) { /* ignore */ } } return true; }
+      return false;
+    };
+    if (srv.passHash && (msg.t === 'create' || msg.t === 'join')) {   // private group: a shared passcode is needed to open or join any room
+      const given = crypto.createHash('sha256').update(String(msg.pass || '').trim()).digest();
+      if (!crypto.timingSafeEqual(given, srv.passHash)) { if (miss()) return; return err('Wrong group passcode. Ask your friends for it.'); }
+    }
     if (msg.t === 'create') {
       if (srv.rooms.size >= srv.maxRooms) return err('Server is busy, try again later');
       let code; do { code = Array.from({ length: 4 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join(''); } while (srv.rooms.has(code));
@@ -431,12 +446,7 @@ function createServer(options = {}) {
     }
     const code = String(msg.code || '').toUpperCase().trim();
     const room = srv.rooms.get(code);
-    if (!room) {                                   // wrong-code guessing is slowed down (per connection and server-wide)
-      const now = Date.now();
-      srv.misses = srv.misses.filter(t => now - t < 60000); srv.misses.push(now);
-      ws.misses = (ws.misses || 0) + 1;
-      if (ws.misses > 8 || srv.misses.length > 150) { err('Too many wrong codes. Wait a minute and try again.'); if (ws.misses > 8) { try { ws.close(1008, 'too many tries'); } catch (e) { /* ignore */ } } return; }
-    }
+    if (!room && msg.t !== 'create' && miss()) return;
     if (msg.t === 'join') {
       if (!room) return err('Room not found. Check the code.');
       const pid = uid(), token = secret();

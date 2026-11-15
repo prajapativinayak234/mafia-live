@@ -165,23 +165,26 @@ function homeView() {
   var pre = ''; try { pre = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4); } catch (e) { /* ignore */ }
   $('app').innerHTML = '<h1>🎭 Mafia Live</h1><div class="sub">Roast Edition · play from anywhere</div>' +
     '<div class="card"><div class="eyes">Your name</div><input id="nm" type="text" maxlength="14" autocomplete="off" autocapitalize="words" spellcheck="false" placeholder="e.g. Vinayak" value="' + esc(savedName()) + '">' +
+    '<div id="pwbox" hidden><div style="height:8px"></div><div class="eyes">Group passcode 🔒</div><input id="pw" type="password" autocomplete="off" spellcheck="false" maxlength="40" placeholder="ask your friends"></div>' +
     '<div style="height:8px"></div>' +
     '<div class="eyes">Room code</div><input id="cd" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="4 letters" style="text-transform:uppercase;text-align:center" value="' + esc(pre) + '">' +
     '<button class="primary" data-a="join">Join room</button>' +
     '<div class="center sub" style="margin:6px 0">or</div>' +
     '<button data-a="create">Create a new room</button></div>' +
     '<p class="center">Tip: run a WhatsApp / Meet voice call at the same time for live talking.</p><div id="err" class="err">' + esc(homeMsg) + '</div>';
+  try { var x = new XMLHttpRequest(); x.open('GET', '/needpass'); x.onload = function () { var b = $('pwbox'); if (b && x.responseText === 'yes') b.hidden = false; }; x.send(); } catch (e) { /* ignore */ }
 }
 function enter(kind) {
   var nm = $('nm').value.replace(/[<>&"'\\]/g, '').trim();
   if (!nm) { $('err').textContent = 'Enter your name first.'; return; }
   saveName(nm);
-  var m;
-  if (kind === 'create') m = { t: 'create', name: nm };
+  var m, pwBox = $('pwbox'), pw = pwBox && !pwBox.hidden ? $('pw').value : '';
+  if (pwBox && !pwBox.hidden && !pw.trim()) { $('err').textContent = 'Enter the group passcode first.'; return; }
+  if (kind === 'create') m = { t: 'create', name: nm, pass: pw };
   else {
     var c = $('cd').value.trim().toUpperCase();
     if (c.length !== 4) { $('err').textContent = 'Room code is 4 letters.'; return; }
-    m = { t: 'join', code: c, name: nm };
+    m = { t: 'join', code: c, name: nm, pass: pw };
   }
   $('err').textContent = 'Connecting…'; pendingEntry = m;
   if (ws && ws.readyState === 1) send(m);
