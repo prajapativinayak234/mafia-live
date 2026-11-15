@@ -24,7 +24,8 @@ const CANNED = {
     verdict_out: ['The town has spoken! {a} is out, and what a dramatic exit. The {r}, everyone!', 'Court is closed. {a} walks away in slow motion. They were the {r}.'],
     verdict_tie: ['A tie! Even the censor board could not decide. Nobody leaves.'],
     over_town: ['The town wins! The villains are exposed, the audience claps, roll credits!'],
-    over_mafia: ['The Mafia wins! The villain laughs, the hero weeps, and the town learns a lesson.']
+    over_mafia: ['The Mafia wins! The villain laughs, the hero weeps, and the town learns a lesson.'],
+    over_jester: ['The Jester wins! The fool got himself voted out and the whole town clapped for the wrong reason. Interval!']
   },
   uncle: {
     start: ['Arrey beta, listen carefully. One of you is lying, and your uncle already knows who. Let us begin.', 'In my time, we played this game with honesty. Anyway, start, start.'],
@@ -35,7 +36,8 @@ const CANNED = {
     verdict_out: ['So you voted {a} out. They were the {r}. I hope you all feel responsible!', '{a} is gone, the {r}. Democracy is a wonderful thing, but also very noisy.'],
     verdict_tie: ['A tie! Nobody can make a decision. Typical. Nobody is out.'],
     over_town: ['The town won! Finally, some good judgement. I am proud of everyone, even you.'],
-    over_mafia: ['The Mafia won! Beta, this is why I told you not to trust anyone. Next time, listen.']
+    over_mafia: ['The Mafia won! Beta, this is why I told you not to trust anyone. Next time, listen.'],
+    over_jester: ['The Jester wins! Beta, you voted out the clown and gave him exactly what he wanted. Sharma ji\'s son would not do this.']
   },
   roast: {
     start: ['Welcome, amateurs. Tonight we find out who lies best and who just sweats loudest.', 'Alright, everyone here is suspicious. Some of you just look it. Let us play.'],
@@ -46,7 +48,8 @@ const CANNED = {
     verdict_out: ['{a} was voted out. The {r}. You voted with confidence. Not accuracy. Confidence.', 'Bye {a}, the {r}. That was a very democratic way to be wrong or right. We will see.'],
     verdict_tie: ['A tie. A whole group of people, zero decisiveness. Impressive.'],
     over_town: ['Town wins! You finally found the liars. Do not let it go to your head, it is a small head.'],
-    over_mafia: ['Mafia wins! You were out-lied by your own friends. Reflect on that.']
+    over_mafia: ['Mafia wins! You were out-lied by your own friends. Reflect on that.'],
+    over_jester: ['The Jester wins! You all took the bait. You got played by the one person begging to be voted out.']
   },
   noir: {
     start: ['The city sleeps uneasily. Among you walk wolves in human skin. The game begins.', 'Rain on the window, doubt in the air. One of you is not who they say they are.'],
@@ -57,7 +60,8 @@ const CANNED = {
     verdict_out: ['The town has chosen. {a} is cast out. They were the {r}. The truth is a heavy thing.', 'With a heavy heart, the town banishes {a}, the {r}.'],
     verdict_tie: ['The vote splits like a broken mirror. Nobody is cast out.'],
     over_town: ['The darkness is lifted. The town stands, battered but whole.'],
-    over_mafia: ['The last light goes out. The Mafia owns the town now.']
+    over_mafia: ['The last light goes out. The Mafia owns the town now.'],
+    over_jester: ['The Jester wins. The fool smiled as the town voted him out, and for once the laugh was his.']
   }
 };
 

@@ -1,9 +1,10 @@
 'use strict';
 // Pure game engine: no network, no timers. Fully unit-testable.
 
-const ROLE_NAME = { mafia: 'Mafia', doctor: 'Doctor', detective: 'Detective', villager: 'Villager' };
+const ROLE_NAME = { mafia: 'Mafia', doctor: 'Doctor', detective: 'Detective', villager: 'Villager', jester: 'Jester', bodyguard: 'Bodyguard', sniper: 'Sniper' };
 const STYLES = ['bollywood', 'uncle', 'roast', 'noir'];
-const SPECIAL = { mafia: 'kill', doctor: 'save', detective: 'probe' };
+const SPECIAL = { mafia: 'kill', doctor: 'save', detective: 'probe', bodyguard: 'guard' };
+const TIMERS = ['off', 'fast', 'normal', 'relaxed'];
 const MAX_PLAYERS = 20;
 const MIN_PLAYERS = 5;
 const DARES = [
@@ -23,9 +24,11 @@ class Game {
     this.rng = rng;
     this.players = [];
     this.hostId = null;
-    this.opts = { mafia: 1, doctor: true, detective: true, ai: true, style: 'bollywood' };
+    this.opts = { mafia: 1, doctor: true, detective: true, jester: false, bodyguard: false, sniper: false, timer: 'off', ai: true, style: 'bollywood' };
     this.phase = 'lobby';
     this.day = 0;
+    this.eid = 0;      // increments on every public night/day event (clients animate on change)
+    this.board = {};   // scoreboard across rounds in this room
     this._resetRound();
   }
 
@@ -41,6 +44,9 @@ class Game {
     this.dare = '';
     this.narrator = null;
     this.stats = { thrown: {}, roasts: {}, chat: {} };
+    this.sniperUsed = {};
+    this.jesterWon = false;
+    this._scored = false;
     this.last = null; // last resolved event for narrator
   }
 
@@ -97,6 +103,10 @@ class Game {
     if (Number.isInteger(o.mafia)) this.opts.mafia = Math.max(1, Math.min(8, o.mafia));
     if (typeof o.doctor === 'boolean') this.opts.doctor = o.doctor;
     if (typeof o.detective === 'boolean') this.opts.detective = o.detective;
+    if (typeof o.jester === 'boolean') this.opts.jester = o.jester;
+    if (typeof o.bodyguard === 'boolean') this.opts.bodyguard = o.bodyguard;
+    if (typeof o.sniper === 'boolean') this.opts.sniper = o.sniper;
+    if (TIMERS.includes(o.timer)) this.opts.timer = o.timer;
     if (typeof o.ai === 'boolean') this.opts.ai = o.ai;
     if (STYLES.includes(o.style)) this.opts.style = o.style;
     return { ok: true };
@@ -109,7 +119,7 @@ class Game {
     if (this.phase !== 'lobby') return { ok: false, err: 'Game already started' };
     if (n < MIN_PLAYERS) return { ok: false, err: `Need at least ${MIN_PLAYERS} players` };
     if (this.opts.mafia > this.maxMafia()) return { ok: false, err: `Too many Mafia for ${n} players (max ${this.maxMafia()})` };
-    const special = this.opts.mafia + (this.opts.doctor ? 1 : 0) + (this.opts.detective ? 1 : 0);
+    const special = this.opts.mafia + (this.opts.doctor ? 1 : 0) + (this.opts.detective ? 1 : 0) + (this.opts.jester ? 1 : 0) + (this.opts.bodyguard ? 1 : 0) + (this.opts.sniper ? 1 : 0);
     if (special > n) return { ok: false, err: 'Too many special roles for this group' };
     return { ok: true };
   }
@@ -123,6 +133,9 @@ class Game {
     for (let i = 0; i < this.opts.mafia; i++) roles.push('mafia');
     if (this.opts.doctor) roles.push('doctor');
     if (this.opts.detective) roles.push('detective');
+    if (this.opts.jester) roles.push('jester');
+    if (this.opts.bodyguard) roles.push('bodyguard');
+    if (this.opts.sniper) roles.push('sniper');
     while (roles.length < this.players.length) roles.push('villager');
     const r = this._shuffle(roles);
     this.players.forEach((p, i) => { p.role = r[i]; p.alive = true; });
@@ -165,6 +178,7 @@ class Game {
     if (!t || !t.alive) return { ok: false, err: 'Pick a living player' };
     if (type === 'kill' && t.role === 'mafia') return { ok: false, err: 'You cannot target your own team' };
     if (type === 'probe' && t.id === p.id) return { ok: false, err: 'You cannot investigate yourself' };
+    if (type === 'guard' && t.id === p.id) return { ok: false, err: 'You cannot guard yourself' };
     this.acts[pid] = { type, target };
     if (type === 'probe') this.det[pid] = { name: t.name, mafia: t.role === 'mafia' };
     return { ok: true };
@@ -186,19 +200,30 @@ class Game {
       victim = top[Math.floor(this.rng() * top.length)];
     }
     const save = Object.values(this.acts).find(a => a.type === 'save');
+    const guardAct = Object.entries(this.acts).find(([gid, a]) => a.type === 'guard' && a.target === victim && this.get(gid) && this.get(gid).alive);
     const v = victim ? this.get(victim) : null;
     let txt, result;
-    if (v && !(save && save.target === victim)) {
+    if (v && save && save.target === victim) {
+      txt = 'Morning! Nobody died - the Doctor saved the target!';
+      this.log.push(`Night ${this.day}: nobody died.`);
+      result = { died: null, saved: true };
+    } else if (v && guardAct) {
+      const b = this.get(guardAct[0]);
+      b.alive = false;
+      txt = `Morning! ${b.name} took the bullet for ${v.name} and died. They were the Bodyguard.`;
+      this.log.push(`Night ${this.day}: ${b.name} (Bodyguard) died protecting ${v.name}.`);
+      result = { died: { id: b.id, name: b.name, role: b.role }, saved: false, guarded: v.name };
+    } else if (v) {
       v.alive = false;
       txt = `Morning! ${v.name} was killed in the night. They were the ${ROLE_NAME[v.role]}.`;
       this.log.push(`Night ${this.day}: ${v.name} (${ROLE_NAME[v.role]}) was killed.`);
       result = { died: { id: v.id, name: v.name, role: v.role } };
     } else {
-      txt = v ? 'Morning! Nobody died - the Doctor saved the target!' : 'Morning! Nobody died tonight.';
+      txt = 'Morning! Nobody died tonight.';
       this.log.push(`Night ${this.day}: nobody died.`);
-      result = { died: null, saved: !!v };
+      result = { died: null, saved: false };
     }
-    this.last = { kind: 'dawn', ...result };
+    this._event({ kind: 'dawn', ...result });
     if (this._checkWin()) { this._say(txt); return this.last; }
     this.phase = 'day';
     this.votes = {};
@@ -216,6 +241,32 @@ class Game {
     if (!t || !t.alive) return { ok: false, err: 'Pick a living player' };
     if (t.id === pid) return { ok: false, err: 'You cannot vote for yourself' };
     this.votes[pid] = target;
+    return { ok: true };
+  }
+
+  shoot(pid, target) {
+    if (this.phase !== 'day') return { ok: false, err: 'You can only shoot during the day' };
+    const p = this.get(pid), t = this.get(target);
+    if (!p || !p.alive || p.role !== 'sniper') return { ok: false, err: 'You are not the Sniper' };
+    if (this.sniperUsed[pid]) return { ok: false, err: 'You already used your bullet' };
+    if (!t || !t.alive) return { ok: false, err: 'Pick a living player' };
+    if (t.id === pid) return { ok: false, err: 'You cannot shoot yourself' };
+    this.sniperUsed[pid] = true;
+    t.alive = false;
+    const backfire = t.role !== 'mafia';
+    if (backfire) p.alive = false;
+    Object.keys(this.votes).forEach(k => { const x = this.get(k); if (!x || !x.alive) delete this.votes[k]; });
+    let txt;
+    if (backfire) {
+      txt = `BANG! ${p.name} the Sniper shot ${t.name}, an innocent ${ROLE_NAME[t.role]}. Both are dead.`;
+      this.log.push(`Day ${this.day}: Sniper ${p.name} shot ${t.name} (${ROLE_NAME[t.role]}) and died of guilt.`);
+    } else {
+      txt = `BANG! ${p.name} the Sniper shot ${t.name}. They were the Mafia!`;
+      this.log.push(`Day ${this.day}: Sniper ${p.name} shot ${t.name} (Mafia).`);
+    }
+    this._event({ kind: 'shot', died: { id: t.id, name: t.name, role: t.role }, shooter: { id: p.id, name: p.name }, backfire });
+    if (this._checkWin()) { this._say(txt); return { ok: true }; }
+    this._say(txt + ' The vote continues!');
     return { ok: true };
   }
 
@@ -240,8 +291,9 @@ class Game {
       out = { id: p.id, name: p.name, role: p.role, votes: entries[0][1] };
       txt = `${p.name} is voted out with ${entries[0][1]} vote${entries[0][1] > 1 ? 's' : ''}. They were the ${ROLE_NAME[p.role]}.`;
       this.log.push(`Day ${this.day}: ${p.name} (${ROLE_NAME[p.role]}) voted out.`);
+      if (p.role === 'jester') this.jesterWon = true;
     }
-    this.last = { kind: 'verdict', out, tally: c };
+    this._event({ kind: 'verdict', out, tally: c, tie: !out });
     if (this._checkWin()) { this._say(txt); return this.last; }
     this.phase = 'verdict';
     this._say(txt);
@@ -259,10 +311,12 @@ class Game {
     const a = this.alive();
     const m = a.filter(p => p.role === 'mafia').length;
     const t = a.length - m;
-    if (m === 0) this.winner = 'town';
+    if (this.jesterWon) this.winner = 'jester';
+    else if (m === 0) this.winner = 'town';
     else if (m >= t) this.winner = 'mafia';
     else return false;
     this.phase = 'over';
+    this._score();
     this.dare = DARES[Math.floor(this.rng() * DARES.length)];
     const top = o => { const e = Object.entries(o).sort((x, y) => y[1] - x[1])[0]; return e && e[1] > 0 ? e : null; };
     const nm = id => (this.get(id) || { name: '?' }).name;
@@ -274,6 +328,25 @@ class Game {
     this.awards = aw;
     this.last = { ...(this.last || {}), kind: 'over', winner: this.winner };
     return true;
+  }
+
+  _event(e) { this.last = e; this.eid++; }
+
+  _score() {
+    if (this._scored) return;
+    this._scored = true;
+    const won = p => this.winner === 'jester' ? p.role === 'jester' : this.winner === 'mafia' ? p.role === 'mafia' : (p.role !== 'mafia' && p.role !== 'jester');
+    this.players.forEach(p => {
+      const b = this.board[p.id] || (this.board[p.id] = { name: p.name, games: 0, wins: 0, survived: 0, points: 0 });
+      b.name = p.name; b.games++;
+      if (won(p)) { b.wins++; b.points += 3; }
+      if (p.alive) { b.survived++; b.points += 1; }
+    });
+  }
+
+  scoreboard() {
+    return Object.keys(this.board).filter(id => this.get(id)).map(id => ({ id, ...this.board[id] }))
+      .sort((x, y) => y.points - x.points || y.wins - x.wins || x.name.localeCompare(y.name));
   }
 
   stat(kind, id, n = 1) {
@@ -301,7 +374,11 @@ class Game {
       dare: over ? this.dare : '',
       log: over ? this.log : [],
       maxMafia: this.maxMafia(),
-      canStart: this.canStart().ok
+      canStart: this.canStart().ok,
+      board: this.scoreboard(),
+      event: (this.last && (this.last.died || this.last.out || this.last.saved || this.last.tie))
+        ? { eid: this.eid, died: this.last.died || null, saved: !!this.last.saved, out: this.last.out ? { name: this.last.out.name, role: this.last.out.role, votes: this.last.out.votes } : null, tie: !!this.last.tie, guarded: this.last.guarded || null, shooter: this.last.shooter || null, backfire: !!this.last.backfire }
+        : null
     };
     if (me && this.phase !== 'lobby') {
       const m = { role: me.role, alive: me.alive };
@@ -317,6 +394,8 @@ class Game {
         m.type = SPECIAL[me.role];
         m.acted = this.acts[me.id] ? this.acts[me.id].target : null;
       }
+      if (me.role === 'sniper') m.canShoot = me.alive && this.phase === 'day' && !this.sniperUsed[me.id];
+      if (me.role === 'sniper') m.sniperUsed = !!this.sniperUsed[me.id];
       if (this.det[me.id]) m.det = this.det[me.id]; // detective keeps last result until next night
       v.me = m;
     }
@@ -324,4 +403,4 @@ class Game {
   }
 }
 
-module.exports = { Game, ROLE_NAME, STYLES, SPECIAL, MAX_PLAYERS, MIN_PLAYERS, cleanName };
+module.exports = { Game, ROLE_NAME, STYLES, SPECIAL, TIMERS, MAX_PLAYERS, MIN_PLAYERS, cleanName };

@@ -13,7 +13,7 @@ function pick(arr, rng) { return arr[Math.floor(rng() * arr.length)]; }
 // Maps a game "last event" to a canned-line key + placeholders
 function describe(game) {
   const L = game.last || {};
-  if (game.phase === 'over') return { key: game.winner === 'town' ? 'over_town' : 'over_mafia', ctx: {} };
+  if (game.phase === 'over') return { key: game.winner === 'town' ? 'over_town' : game.winner === 'jester' ? 'over_jester' : 'over_mafia', ctx: {} };
   if (L.kind === 'dawn') {
     if (L.died) return { key: 'dawn_died', ctx: { a: L.died.name, r: roleName(L.died.role) } };
     return { key: L.saved ? 'dawn_safe' : 'dawn_quiet', ctx: {} };
@@ -24,7 +24,7 @@ function describe(game) {
   }
   return null;
 }
-const roleName = r => ({ mafia: 'Mafia', doctor: 'Doctor', detective: 'Detective', villager: 'Villager' }[r] || r);
+const roleName = r => ({ mafia: 'Mafia', doctor: 'Doctor', detective: 'Detective', villager: 'Villager', jester: 'Jester', bodyguard: 'Bodyguard', sniper: 'Sniper' }[r] || r);
 
 function canned(style, key, ctx, rng) {
   const set = (CANNED[style] || CANNED.bollywood)[key] || CANNED.bollywood[key];
@@ -45,7 +45,7 @@ function publicFacts(game, kind) {
       const who = Object.entries(game.votes).map(([a, b]) => `${(game.get(a) || {}).name}->${(game.get(b) || {}).name}`).join(', ') || 'nobody voted';
       return `Vote result: ${game.announce} Who voted for whom: ${who}. React and tease one voter.`;
     }
-    case 'over': return `Game over. ${game.winner === 'town' ? 'The town' : 'The Mafia'} won. Roles: ${game.players.map(p => `${p.name}=${roleName(p.role)}${p.alive ? '' : ' (dead)'}`).join(', ')}. Awards: ${game.awards.join('; ') || 'none'}. Give a funny closing speech roasting the losers and praising the winners.`;
+    case 'over': return `Game over. ${game.winner === 'town' ? 'The town' : game.winner === 'jester' ? 'The Jester (by getting voted out on purpose)' : 'The Mafia'} won. Roles: ${game.players.map(p => `${p.name}=${roleName(p.role)}${p.alive ? '' : ' (dead)'}`).join(', ')}. Awards: ${game.awards.join('; ') || 'none'}. Give a funny closing speech roasting the losers and praising the winners.`;
     default: return '';
   }
 }

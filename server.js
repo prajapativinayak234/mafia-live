@@ -11,10 +11,11 @@ const { narrate } = require('./narrator');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const DEFAULT_TIMING = { resolveMin: 2500, resolveMax: 5000, dayResolve: 1200, verdict: 7000, nightMax: 120000, dayMax: 600000, lobbyGrace: 20000, emptyTTL: 1800000, idleTTL: 10800000 };
+const DEFAULT_TIMING = { resolveMin: 2500, resolveMax: 5000, dayResolve: 1200, verdict: 7000, nightMax: 120000, dayMax: 600000, lobbyGrace: 20000, emptyTTL: 1800000, idleTTL: 10800000, timerScale: 1 };
+const TIMER_PRESETS = { fast: { night: 45000, day: 90000 }, normal: { night: 75000, day: 180000 }, relaxed: { night: 120000, day: 300000 } };
 
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' ws: wss:; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY'
@@ -37,13 +38,24 @@ class Room {
     this.banterDone = false;
     this.cool = new Map();      // `${pid}:${kind}` -> last ts
     this.closed = false;
+    this.deadline = null;
   }
 
   touch() { this.touched = Date.now(); }
   send(ws, msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
   sendTo(pid, msg) { this.send(this.conns.get(pid), msg); }
   broadcast(msg, filter) { for (const [pid, ws] of this.conns) if (!filter || filter(this.game.get(pid))) this.send(ws, msg); }
-  pushState() { for (const [pid, ws] of this.conns) this.send(ws, { t: 'state', s: this.game.viewFor(pid) }); }
+  pushState() {
+    const left = this.deadline ? Math.max(0, this.deadline - Date.now()) : null;
+    for (const [pid, ws] of this.conns) this.send(ws, { t: 'state', s: this.game.viewFor(pid), left });
+  }
+
+  // Phase time limits: host-chosen timer preset, or the long safety nets when the timer is off.
+  limits() {
+    const T = this.srv.timing, o = this.game.opts.timer, p = TIMER_PRESETS[o];
+    if (!p) return { night: T.nightMax, day: T.dayMax, shown: false };
+    return { night: p.night * T.timerScale, day: p.day * T.timerScale, shown: true };
+  }
 
   clearTimers() { for (const k of Object.keys(this.timers)) { clearTimeout(this.timers[k]); delete this.timers[k]; } }
   later(name, ms, fn) { if (this.timers[name]) return; this.timers[name] = setTimeout(() => { delete this.timers[name]; if (!this.closed) { fn(); } }, ms); }
@@ -55,6 +67,7 @@ class Room {
     if (key !== this.phaseKey) {
       const prev = this.phaseKey;
       this.clearTimers();
+      this.deadline = null;
       this.phaseKey = key;
       this.banterDone = false;
       this.townLines = [];
@@ -62,10 +75,14 @@ class Room {
     }
     if (g.phase === 'night') {
       if (g.nightComplete()) this.later('resolve', T.resolveMin + this.srv.rng() * (T.resolveMax - T.resolveMin), () => { if (g.nightComplete()) this.resolveNight(); });
-      this.later('nightMax', T.nightMax, () => this.resolveNight());
+      const L = this.limits();
+      if (L.shown && !this.deadline) this.deadline = Date.now() + L.night;
+      this.later('nightMax', L.night, () => this.resolveNight());
     } else if (g.phase === 'day') {
       if (g.voteComplete()) this.later('dayResolve', T.dayResolve, () => { if (g.voteComplete()) this.resolveDay(); });
-      this.later('dayMax', T.dayMax, () => this.resolveDay());
+      const L = this.limits();
+      if (L.shown && !this.deadline) this.deadline = Date.now() + L.day;
+      this.later('dayMax', L.day, () => this.resolveDay());
     } else if (g.phase === 'verdict') {
       this.later('verdict', T.verdict, () => { if (g.nextNight()) this.sync(); });
     }
@@ -128,6 +145,11 @@ class Room {
       }
       case 'vote': {
         if (!res(g.vote(pid, msg.target == null ? null : String(msg.target)))) return;
+        this.sync();
+        break;
+      }
+      case 'shoot': {
+        if (!res(g.shoot(pid, String(msg.target)))) return;
         this.sync();
         break;
       }
