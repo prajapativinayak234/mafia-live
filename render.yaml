@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: mafia-live
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      # Optional: set in the Render dashboard (Environment tab) to get a live Claude narrator.
+      # Without it the game uses the built-in preset narrator lines.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NARRATOR_MODEL
+        value: claude-haiku-5-5
